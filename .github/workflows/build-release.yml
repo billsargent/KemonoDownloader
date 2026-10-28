@@ -1,0 +1,101 @@
+name: Build release artifacts
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Existing release tag to attach artifacts to (blank = workflow artifacts only)"
+        required: false
+        default: ""
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: Build (${{ matrix.platform }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            platform: windows
+            format: msi
+            asset_glob: "dist/*.msi"
+            artifact: kemonodownloader-windows
+          - os: ubuntu-latest
+            platform: linux
+            format: appimage
+            asset_glob: "dist/*.AppImage"
+            artifact: kemonodownloader-linux
+          - os: macos-latest
+            platform: macos
+            format: dmg
+            asset_glob: "dist/*.dmg"
+            artifact: kemonodownloader-macos
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: Install Linux system packages
+        if: matrix.platform == 'linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            libegl1 libgl1-mesa-dri libglx-mesa0 libx11-6 libxkbcommon0 \
+            libxcb-xinerama0 libpulse0 libpulse-mainloop-glib0 libasound2t64 \
+            mesa-utils
+
+      - name: Install Briefcase
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install briefcase
+
+      - name: Create, build and package
+        shell: bash
+        env:
+          APPIMAGE_EXTRACT_AND_RUN: "1"
+        run: |
+          set -euo pipefail
+          python -m briefcase create "${{ matrix.platform }}" --no-input
+          python -m briefcase build "${{ matrix.platform }}" --no-input
+          if [ "${{ matrix.platform }}" = "macos" ]; then
+            # Ad-hoc signing keeps the unsigned build runnable on Apple silicon.
+            python -m briefcase package "${{ matrix.platform }}" --no-input --adhoc-sign -p "${{ matrix.format }}"
+          else
+            python -m briefcase package "${{ matrix.platform }}" --no-input -p "${{ matrix.format }}"
+          fi
+
+      - name: Upload workflow artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact }}
+          path: ${{ matrix.asset_glob }}
+          if-no-files-found: error
+          retention-days: 14
+
+  publish:
+    name: Attach artifacts to release
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/') || inputs.tag != ''
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Upload assets to the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ inputs.tag || github.ref_name }}
+        run: |
+          set -euo pipefail
+          find artifacts -type f -print
+          mapfile -t files < <(find artifacts -type f)
+          gh release upload "$TAG" "${files[@]}" --repo "${{ github.repository }}" --clobber
