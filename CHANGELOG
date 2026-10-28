@@ -1,5 +1,43 @@
 # Kemono Downloader Release Notes
 
+## Unreleased
+**feat: creator bookmarks tab**
+
+- Add a **Bookmarks** tab (placed after the Creator Downloader) that persists creator URLs and pushes them into the Creator Downloader queue.
+  Entries can be added by URL or imported from a `.txt` list, then sent with "Add Selected to Queue" or "Add All to Queue"; the application switches to the Creator Downloader and logs how many creators were added or skipped.
+- Bookmark creators automatically and manually.
+  Every creator added to the queue (single URL, bulk paste, or `.txt` import) is bookmarked automatically, and each queue row gains a bookmark toggle (`fa5s.bookmark`, gold when saved) to add or remove the entry.
+- Bookmarks are stored in the application settings (`creator_bookmarks`) so they survive restarts without adding new files to the download folder. Entries are normalised and de-duplicated (`<service>/user/<id>` URLs, optional scheme, `www.` stripped, query dropped), and invalid URLs are rejected.
+- Add bookmark translations for English, Japanese, Korean, and Simplified Chinese, plus a "Using the Bookmarks Tab" section in the Help tab.
+- Tab titles are now updated from a single ordered list instead of hardcoded tab indexes, so inserting or reordering tabs can no longer desync localised labels.
+
+**feat: configurable request pacing and retry backoff**
+
+- Add a "Request Pacing" group to Settings.
+  - **Delay between requests** (0–30 s, default 0) is a minimum gap applied to every outbound request across the Post, Creator and Thumbnail tabs.
+  - **Per-host delays** (`host=seconds`, one per line; default `pawchive.pw=1.0`) raise the gap for specific sites; the global delay acts as a floor, and the most specific host match wins.
+  - **Retry backoff base** (default 1 s) and **cap** (default 30 s) drive one exponential policy shared by all retry paths.
+  - Host-delay text is validated on apply (malformed lines block the change with a message) and the confirmation dialog now reports the pacing values.
+- Add a new `request_pacing` module and route every request through it.
+  All `session.get` calls in the three tabs now pass through `paced_get`/`PacedSession`; the pacer is thread-safe, paces each host independently, and aborts waits when a worker is cancelled. The Pawchive concurrency cap remains a fixed policy of five active file downloads.
+- Thumbnail Downloader now respects the Pawchive download policy.
+  Its file downloads acquire/release the Pawchive slot and share the pacer, closing the gap where the thumbnail tab bypassed the policy entirely.
+- Retry delays are now uniform and configurable.
+  The hardcoded `2**attempt` backoff, the 3-2-1 s file-retry countdown, the 5 s post-data/429 countdown, the 1 s creator and thumbnail retries, and the 2 s validation doubling all use the configured backoff (capped).
+- Removed the internal `PAWCHIVE_REQUEST_INTERVAL` constant; request spacing now lives in the pacer defaults.
+- Behaviour changes worth noting: default retry timings become 1 s, 2 s, 4 s, … instead of flat or countdown values, and the fixed 0.5 s delay between creator post pages is gone. Add a per-host delay such as `kemono.cr=0.5` to restore or exceed the previous page pacing.
+
+**test: the suite no longer opens OS windows**
+
+- Neutralise `webbrowser.open*` and `QDesktopServices.openUrl` for the whole suite, and assert the update dialog hands over the release URL through the recorder.
+- Neutralise `os.startfile` on Windows so directory-opening tests cannot launch File Explorer at pytest temp folders.
+- Update tab-count/tab-index assertions for the new Bookmarks tab.
+
+**docs**
+
+- README: document the Bookmarks tab, the request-pacing settings, and correct the stale setting ranges (simultaneous downloads 1-20, retries 1-100/1-200/1-50).
+- Help tab: add "Request Pacing and Retries" alongside the Bookmarks section.
+
 ## v5.13.0 (27 September 2026)
 **fix: responsible Pawchive request pacing and improved resilience to HTTP 403 responses**
 

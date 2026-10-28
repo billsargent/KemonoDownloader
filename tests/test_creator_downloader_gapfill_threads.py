@@ -429,7 +429,9 @@ def test_post_detection_offset_increment_path(monkeypatch):
 
     thread.run()
 
-    assert 0.5 in sleeps
+    # Inter-page spacing is now handled by the request pacer (configurable in
+    # Settings), so no fixed 0.5s sleep is hardcoded here.
+    assert 0.5 not in sleeps
 
 
 def test_post_population_stop_then_run_returns_early():

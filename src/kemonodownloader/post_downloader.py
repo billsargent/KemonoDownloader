@@ -54,6 +54,7 @@ from kemonodownloader.download_policy import (
     release_pawchive_download,
 )
 from kemonodownloader.hash_db import HashDB
+from kemonodownloader.request_pacing import compute_backoff, paced_get
 
 # Resolve translations dynamically at call time so tests can monkeypatch
 # the runtime translation function in `kemonodownloader.kd_language`.
@@ -199,8 +200,11 @@ class PreviewThread(QThread):
                 return
 
         try:
-            response = get_session(self.settings_tab).get(
-                self.url, headers=get_headers(), stream=True
+            response = paced_get(
+                get_session(self.settings_tab),
+                self.url,
+                headers=get_headers(),
+                stream=True,
             )
             response.raise_for_status()
             header = response.headers.get("content-length")
@@ -794,8 +798,11 @@ class PostDetectionThread(QThread):
             max_retries = self.settings.api_request_max_retries
         for attempt in range(max_retries):
             try:
-                response = get_session(self.settings.settings_tab).get(
-                    url, headers=get_headers(), timeout=10
+                response = paced_get(
+                    get_session(self.settings.settings_tab),
+                    url,
+                    headers=get_headers(),
+                    timeout=10,
                 )
                 if response.status_code == 200:
                     return response
@@ -803,8 +810,11 @@ class PostDetectionThread(QThread):
                     # Try with alternative headers
                     alt_headers = get_headers().copy()
                     alt_headers["Accept"] = "text/css"
-                    response = get_session(self.settings.settings_tab).get(
-                        url, headers=alt_headers, timeout=10
+                    response = paced_get(
+                        get_session(self.settings.settings_tab),
+                        url,
+                        headers=alt_headers,
+                        timeout=10,
                     )
                     if response.status_code == 200:
                         return response
@@ -818,7 +828,7 @@ class PostDetectionThread(QThread):
                         "ERROR",
                     )
                     return None
-                time.sleep(2**attempt)  # Exponential backoff
+                time.sleep(compute_backoff(attempt))  # Exponential backoff
         return None
 
     def parse_response_content(self, response):
@@ -1046,9 +1056,11 @@ class FilePreparationThread(QThread):
         )
         return list(dict.fromkeys(files_to_download))
 
-    def fetch_post_data(self, post_id, max_retries=None, retry_delay_seconds=5):
+    def fetch_post_data(self, post_id, max_retries=None, retry_delay_seconds=None):
         if max_retries is None:
             max_retries = self.settings.post_data_max_retries
+        if retry_delay_seconds is None:
+            retry_delay_seconds = int(compute_backoff(0))
         self.url = self.url.rstrip("/")
         parts = self.url.split("/")
         service, creator_id = parts[-5], parts[-3]
@@ -1154,23 +1166,29 @@ class FilePreparationThread(QThread):
             max_retries = self.settings.api_request_max_retries
         for attempt in range(max_retries):
             try:
-                response = get_session(self.settings.settings_tab).get(
-                    url, headers=get_headers(), timeout=10
+                response = paced_get(
+                    get_session(self.settings.settings_tab),
+                    url,
+                    headers=get_headers(),
+                    timeout=10,
                 )
                 if response.status_code == 200:
                     return response
                 elif response.status_code == 403:
                     alt_headers = get_headers().copy()
                     alt_headers["Accept"] = "text/css"
-                    response = get_session(self.settings.settings_tab).get(
-                        url, headers=alt_headers, timeout=10
+                    response = paced_get(
+                        get_session(self.settings.settings_tab),
+                        url,
+                        headers=alt_headers,
+                        timeout=10,
                     )
                     if response.status_code == 200:
                         return response
             except Exception:
                 if attempt == max_retries - 1:
                     return None
-                time.sleep(2**attempt)
+                time.sleep(compute_backoff(attempt))
         return None
 
     def parse_response_content(self, response):
@@ -1418,23 +1436,29 @@ class DownloadThread(QThread):
             max_retries = self.settings.api_request_max_retries
         for attempt in range(max_retries):
             try:
-                response = get_session(self.settings.settings_tab).get(
-                    url, headers=get_headers(), timeout=10
+                response = paced_get(
+                    get_session(self.settings.settings_tab),
+                    url,
+                    headers=get_headers(),
+                    timeout=10,
                 )
                 if response.status_code == 200:
                     return response
                 elif response.status_code == 403:
                     alt_headers = get_headers().copy()
                     alt_headers["Accept"] = "text/css"
-                    response = get_session(self.settings.settings_tab).get(
-                        url, headers=alt_headers, timeout=10
+                    response = paced_get(
+                        get_session(self.settings.settings_tab),
+                        url,
+                        headers=alt_headers,
+                        timeout=10,
                     )
                     if response.status_code == 200:
                         return response
             except Exception:
                 if attempt == max_retries - 1:
                     return None
-                time.sleep(2**attempt)
+                time.sleep(compute_backoff(attempt))
         return None
 
     def parse_response_content(self, response):
@@ -1586,7 +1610,8 @@ class DownloadThread(QThread):
                 with self._ssl_lock:
                     if not self.is_running:
                         return
-                    response = get_session(self.settings.settings_tab).get(
+                    response = paced_get(
+                        get_session(self.settings.settings_tab),
                         file_url,
                         headers=get_request_headers(get_headers(), file_url),
                         stream=True,
@@ -1715,7 +1740,7 @@ class DownloadThread(QThread):
                         ),
                         "WARNING",
                     )
-                    for i in range(3, 0, -1):
+                    for i in range(int(compute_backoff(attempt - 1)), 0, -1):
                         if not self.is_running:
                             self.log.emit(
                                 translate(
@@ -2531,8 +2556,11 @@ class PostDownloaderTab(QWidget):
                 "Referer": get_domain_config(url)["referer"],
             }
 
-            direct_response = get_session(self.parent.settings_tab).get(
-                url, headers=fallback_headers, timeout=10
+            direct_response = paced_get(
+                get_session(self.parent.settings_tab),
+                url,
+                headers=fallback_headers,
+                timeout=10,
             )
 
             if direct_response.status_code == 200:
@@ -2799,23 +2827,29 @@ class PostDownloaderTab(QWidget):
             max_retries = settings.api_request_max_retries
         for attempt in range(max_retries):
             try:
-                response = get_session(self.parent.settings_tab).get(
-                    url, headers=get_headers(), timeout=10
+                response = paced_get(
+                    get_session(self.parent.settings_tab),
+                    url,
+                    headers=get_headers(),
+                    timeout=10,
                 )
                 if response.status_code == 200:
                     return response
                 elif response.status_code == 403:
                     alt_headers = get_headers().copy()
                     alt_headers["Accept"] = "text/css"
-                    response = get_session(self.parent.settings_tab).get(
-                        url, headers=alt_headers, timeout=10
+                    response = paced_get(
+                        get_session(self.parent.settings_tab),
+                        url,
+                        headers=alt_headers,
+                        timeout=10,
                     )
                     if response.status_code == 200:
                         return response
             except Exception:
                 if attempt == max_retries - 1:
                     return None
-                time.sleep(2**attempt)
+                time.sleep(compute_backoff(attempt))
         return None
 
     def parse_response_content(self, response):

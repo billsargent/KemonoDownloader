@@ -7,6 +7,7 @@ from PyQt6.QtCore import QProcess, QSettings, Qt, QThread, pyqtSignal
 from PyQt6.QtWidgets import (
     QCheckBox,
     QComboBox,
+    QDoubleSpinBox,
     QFileDialog,
     QGridLayout,
     QGroupBox,
@@ -14,6 +15,7 @@ from PyQt6.QtWidgets import (
     QLabel,
     QLineEdit,
     QMessageBox,
+    QPlainTextEdit,
     QProgressBar,
     QPushButton,
     QScrollArea,
@@ -25,6 +27,7 @@ from PyQt6.QtWidgets import (
 )
 
 from kemonodownloader.kd_language import language_manager, translate
+from kemonodownloader.request_pacing import format_host_delays, pacer, parse_host_delays
 
 
 class SettingsTab(QWidget):
@@ -48,6 +51,11 @@ class SettingsTab(QWidget):
             "post_data_max_retries": 7,
             "file_download_max_retries": 50,
             "api_request_max_retries": 3,
+            # Request pacing and retry backoff
+            "request_delay_seconds": 0.0,
+            "request_host_delays": "pawchive.pw=1.0",
+            "retry_backoff_seconds": 1.0,
+            "retry_backoff_max_seconds": 30.0,
             "use_proxy": False,
             "proxy_type": "tor",  # "custom", "tor"
             "custom_proxy_url": "",
@@ -59,7 +67,10 @@ class SettingsTab(QWidget):
             "font": "JetBrains Mono",  # "JetBrains Mono", "Poppins"
         }
         self.settings = self.load_settings()
+        for key, default in self.default_settings.items():
+            self.settings.setdefault(key, default)
         self.temp_settings = self.settings.copy()
+        self._apply_pacing_settings(self.settings)
 
         # Tor process management
         self.tor_process = None
@@ -124,6 +135,26 @@ class SettingsTab(QWidget):
             self.default_settings["api_request_max_retries"],
             type=int,
         )
+        settings_dict["request_delay_seconds"] = self.qsettings.value(
+            "request_delay_seconds",
+            self.default_settings.get("request_delay_seconds", 0.0),
+            type=float,
+        )
+        settings_dict["request_host_delays"] = self.qsettings.value(
+            "request_host_delays",
+            self.default_settings.get("request_host_delays", ""),
+            type=str,
+        )
+        settings_dict["retry_backoff_seconds"] = self.qsettings.value(
+            "retry_backoff_seconds",
+            self.default_settings.get("retry_backoff_seconds", 1.0),
+            type=float,
+        )
+        settings_dict["retry_backoff_max_seconds"] = self.qsettings.value(
+            "retry_backoff_max_seconds",
+            self.default_settings.get("retry_backoff_max_seconds", 30.0),
+            type=float,
+        )
         settings_dict["use_proxy"] = False  # Always start with proxy disabled
         settings_dict["proxy_type"] = self.qsettings.value(
             "proxy_type", self.default_settings["proxy_type"], type=str
@@ -177,6 +208,22 @@ class SettingsTab(QWidget):
         )
         self.qsettings.setValue(
             "api_request_max_retries", self.settings["api_request_max_retries"]
+        )
+        self.qsettings.setValue(
+            "request_delay_seconds",
+            self.settings.get("request_delay_seconds", 0.0),
+        )
+        self.qsettings.setValue(
+            "request_host_delays",
+            self.settings.get("request_host_delays", "pawchive.pw=1.0"),
+        )
+        self.qsettings.setValue(
+            "retry_backoff_seconds",
+            self.settings.get("retry_backoff_seconds", 1.0),
+        )
+        self.qsettings.setValue(
+            "retry_backoff_max_seconds",
+            self.settings.get("retry_backoff_max_seconds", 30.0),
         )
         self.qsettings.setValue("proxy_type", self.settings["proxy_type"])
         self.qsettings.setValue("custom_proxy_url", self.settings["custom_proxy_url"])
@@ -283,6 +330,77 @@ class SettingsTab(QWidget):
 
         self.download_group.setLayout(download_layout)
         layout.addWidget(self.download_group)
+
+        # Request Pacing Group
+        self.pacing_group = QGroupBox()
+        self.pacing_group.setStyleSheet(
+            "QGroupBox { color: white; font-weight: bold; padding: 10px; }"
+        )
+        pacing_layout = QGridLayout()
+
+        self.request_delay_label = QLabel()
+        pacing_layout.addWidget(self.request_delay_label, 0, 0)
+        self.request_delay_spinbox = QDoubleSpinBox()
+        self.request_delay_spinbox.setRange(0.0, 30.0)
+        self.request_delay_spinbox.setSingleStep(0.1)
+        self.request_delay_spinbox.setDecimals(1)
+        self.request_delay_spinbox.setSuffix(" s")
+        self.request_delay_spinbox.setValue(
+            float(self.temp_settings["request_delay_seconds"])
+        )
+        self.request_delay_spinbox.setStyleSheet("padding: 5px; border-radius: 5px;")
+        self.request_delay_spinbox.valueChanged.connect(
+            lambda value: self.update_temp_setting("request_delay_seconds", value)
+        )
+        pacing_layout.addWidget(self.request_delay_spinbox, 0, 1)
+
+        self.retry_backoff_label = QLabel()
+        pacing_layout.addWidget(self.retry_backoff_label, 1, 0)
+        self.retry_backoff_spinbox = QDoubleSpinBox()
+        self.retry_backoff_spinbox.setRange(0.0, 30.0)
+        self.retry_backoff_spinbox.setSingleStep(0.5)
+        self.retry_backoff_spinbox.setDecimals(1)
+        self.retry_backoff_spinbox.setSuffix(" s")
+        self.retry_backoff_spinbox.setValue(
+            float(self.temp_settings["retry_backoff_seconds"])
+        )
+        self.retry_backoff_spinbox.setStyleSheet("padding: 5px; border-radius: 5px;")
+        self.retry_backoff_spinbox.valueChanged.connect(
+            lambda value: self.update_temp_setting("retry_backoff_seconds", value)
+        )
+        pacing_layout.addWidget(self.retry_backoff_spinbox, 1, 1)
+
+        self.retry_backoff_max_label = QLabel()
+        pacing_layout.addWidget(self.retry_backoff_max_label, 2, 0)
+        self.retry_backoff_max_spinbox = QDoubleSpinBox()
+        self.retry_backoff_max_spinbox.setRange(1.0, 300.0)
+        self.retry_backoff_max_spinbox.setSingleStep(1.0)
+        self.retry_backoff_max_spinbox.setDecimals(0)
+        self.retry_backoff_max_spinbox.setSuffix(" s")
+        self.retry_backoff_max_spinbox.setValue(
+            float(self.temp_settings["retry_backoff_max_seconds"])
+        )
+        self.retry_backoff_max_spinbox.setStyleSheet("padding: 5px; border-radius: 5px;")
+        self.retry_backoff_max_spinbox.valueChanged.connect(
+            lambda value: self.update_temp_setting("retry_backoff_max_seconds", value)
+        )
+        pacing_layout.addWidget(self.retry_backoff_max_spinbox, 2, 1)
+
+        self.per_host_delays_label = QLabel()
+        pacing_layout.addWidget(self.per_host_delays_label, 3, 0, 1, 2)
+        self.host_delays_input = QPlainTextEdit()
+        self.host_delays_input.setFixedHeight(70)
+        self.host_delays_input.setStyleSheet("padding: 5px; border-radius: 5px;")
+        self.host_delays_input.setPlainText(self.temp_settings["request_host_delays"])
+        self.host_delays_input.textChanged.connect(
+            lambda: self.update_temp_setting(
+                "request_host_delays", self.host_delays_input.toPlainText()
+            )
+        )
+        pacing_layout.addWidget(self.host_delays_input, 4, 0, 1, 2)
+
+        self.pacing_group.setLayout(pacing_layout)
+        layout.addWidget(self.pacing_group)
 
         # Retry Settings Group
         self.retry_group = QGroupBox()
@@ -1077,6 +1195,26 @@ class SettingsTab(QWidget):
         )
         proxy_type_name = self.temp_settings["proxy_type"].capitalize()
 
+        # Validate host delay overrides before anything is applied
+        host_delays, host_delay_errors = parse_host_delays(
+            self.temp_settings.get("request_host_delays", "")
+        )
+        if host_delay_errors:
+            QMessageBox.warning(
+                self,
+                translate("invalid_input"),
+                translate("invalid_host_delays", "\n".join(host_delay_errors)),
+            )
+            return
+        self.temp_settings["request_host_delays"] = format_host_delays(host_delays)
+
+        pacing_display = translate(
+            "pacing_summary",
+            f"{self.temp_settings['request_delay_seconds']:g}",
+            f"{self.temp_settings['retry_backoff_seconds']:g}",
+            f"{self.temp_settings['retry_backoff_max_seconds']:g}",
+        )
+
         # Prepare display values for template and folder strategy
         filename_template_display = self.temp_settings.get(
             "creator_filename_template", "{post_id}_{orig_name}"
@@ -1109,6 +1247,7 @@ class SettingsTab(QWidget):
                 filename_template_display,
                 folder_strategy_display,
                 self.temp_settings.get("font", "JetBrains Mono"),
+                pacing_display,
             ),
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
             QMessageBox.StandardButton.No,
@@ -1148,6 +1287,7 @@ class SettingsTab(QWidget):
             False  # Always keep proxy disabled in saved settings
         )
         self.save_settings()
+        self._apply_pacing_settings(self.settings)
         old_base_folder = self.parent.base_folder
         self.parent.base_folder = os.path.join(
             self.settings["base_directory"], self.settings["base_folder_name"]
@@ -1219,6 +1359,7 @@ class SettingsTab(QWidget):
                 filename_template_display,
                 folder_strategy_display,
                 self.settings.get("font", "JetBrains Mono"),
+                pacing_display,
             ),
         )
 
@@ -1257,6 +1398,16 @@ class SettingsTab(QWidget):
         self.api_request_max_retries_spinbox.setValue(
             self.temp_settings["api_request_max_retries"]
         )
+        self.request_delay_spinbox.setValue(
+            float(self.temp_settings["request_delay_seconds"])
+        )
+        self.retry_backoff_spinbox.setValue(
+            float(self.temp_settings["retry_backoff_seconds"])
+        )
+        self.retry_backoff_max_spinbox.setValue(
+            float(self.temp_settings["retry_backoff_max_seconds"])
+        )
+        self.host_delays_input.setPlainText(self.temp_settings["request_host_delays"])
 
         # Update proxy settings
         self.use_proxy_checkbox.blockSignals(True)
@@ -1303,6 +1454,14 @@ class SettingsTab(QWidget):
         )
 
         self.retry_group.setTitle(translate("retry_settings"))
+        self.pacing_group.setTitle(translate("request_pacing_settings"))
+        self.request_delay_label.setText(translate("request_delay_seconds"))
+        self.retry_backoff_label.setText(translate("retry_backoff_seconds"))
+        self.retry_backoff_max_label.setText(translate("retry_backoff_max_seconds"))
+        self.per_host_delays_label.setText(translate("per_host_delays"))
+        self.host_delays_input.setPlaceholderText(
+            translate("per_host_delays_placeholder")
+        )
         self.creator_posts_max_attempts_label.setText(
             translate("creator_posts_max_attempts")
         )
@@ -1435,6 +1594,30 @@ class SettingsTab(QWidget):
 
     def get_api_request_max_retries(self):
         return self.settings["api_request_max_retries"]
+
+    def get_request_delay_seconds(self):
+        return self.settings.get("request_delay_seconds", 0.0)
+
+    def get_request_host_delays(self):
+        return self.settings.get("request_host_delays", "")
+
+    def get_retry_backoff_seconds(self):
+        return self.settings.get("retry_backoff_seconds", 1.0)
+
+    def get_retry_backoff_max_seconds(self):
+        return self.settings.get("retry_backoff_max_seconds", 30.0)
+
+    def _apply_pacing_settings(self, settings):
+        """Push pacing and backoff values into the shared request pacer."""
+        host_delays, _errors = parse_host_delays(
+            settings.get("request_host_delays", "")
+        )
+        pacer.configure(
+            global_delay=settings.get("request_delay_seconds", 0.0),
+            host_delays=host_delays,
+            backoff_base=settings.get("retry_backoff_seconds", 1.0),
+            backoff_cap=settings.get("retry_backoff_max_seconds", 30.0),
+        )
 
     def get_creator_filename_template(self):
         return self.settings.get("creator_filename_template", "{post_id}_{orig_name}")

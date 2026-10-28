@@ -333,8 +333,8 @@ def test_app_thumbnail_tab_integration(qapp):
     win = KemonoDownloader()
     win.main_widget = win.setup_main_ui()
     assert hasattr(win, "thumbnail_tab")
-    assert win.tabs.count() == 6
-    assert win.tabs.tabText(2) == "Thumbnail Downloader"
+    assert win.tabs.count() == 7
+    assert win.tabs.tabText(3) == "Thumbnail Downloader"
     win.deleteLater()
 
 

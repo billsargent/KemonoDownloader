@@ -165,6 +165,32 @@ class HelpTab(QWidget):
         help_tab_text.setAlignment(Qt.AlignmentFlag.AlignJustify)
         self.content_layout.addWidget(help_tab_text)
 
+        # Section: Request Pacing and Retries
+        pacing_title = QLabel(f"<h2>{translate('help_pacing_title')}</h2>")
+        pacing_title.setFont(QFont(self._get_font_family(), 16, QFont.Weight.Bold))
+        pacing_title.setStyleSheet("color: white; padding: 10px 5px 5px 5px;")
+        self.content_layout.addWidget(pacing_title)
+
+        pacing_text = QLabel(translate("help_pacing_text"))
+        pacing_text.setFont(QFont(self._get_font_family(), 12))
+        pacing_text.setStyleSheet("color: #D0D0D0; padding: 5px;")
+        pacing_text.setWordWrap(True)
+        pacing_text.setAlignment(Qt.AlignmentFlag.AlignJustify)
+        self.content_layout.addWidget(pacing_text)
+
+        # Section: Using the Bookmarks Tab
+        bookmarks_title = QLabel(f"<h2>{translate('help_bookmarks_title')}</h2>")
+        bookmarks_title.setFont(QFont(self._get_font_family(), 16, QFont.Weight.Bold))
+        bookmarks_title.setStyleSheet("color: white; padding: 10px 5px 5px 5px;")
+        self.content_layout.addWidget(bookmarks_title)
+
+        bookmarks_text = QLabel(translate("help_bookmarks_text"))
+        bookmarks_text.setFont(QFont(self._get_font_family(), 12))
+        bookmarks_text.setStyleSheet("color: #D0D0D0; padding: 5px;")
+        bookmarks_text.setWordWrap(True)
+        bookmarks_text.setAlignment(Qt.AlignmentFlag.AlignJustify)
+        self.content_layout.addWidget(bookmarks_text)
+
         # Section: Troubleshooting
         troubleshooting_title = QLabel(
             f"<h2>{translate('help_troubleshooting_title')}</h2>"

@@ -50,6 +50,7 @@ from kemonodownloader.download_policy import (
     release_pawchive_download,
 )
 from kemonodownloader.hash_db import HashDB
+from kemonodownloader.request_pacing import compute_backoff, paced_get
 from kemonodownloader.kd_language import translate
 
 
@@ -238,8 +239,11 @@ class PreviewThread(QThread):
                     return
 
             try:
-                response = get_session(self.settings_tab).get(
-                    self.url, headers=get_headers(), stream=True
+                response = paced_get(
+                    get_session(self.settings_tab),
+                    self.url,
+                    headers=get_headers(),
+                    stream=True,
                 )
                 response.raise_for_status()
                 header = response.headers.get("content-length")
@@ -487,8 +491,11 @@ class PostDetectionThread(QThread):
                 }
 
                 try:
-                    alt_response = get_session(self.settings.settings_tab).get(
-                        alt_url, headers=fallback_headers, timeout=15
+                    alt_response = paced_get(
+                        get_session(self.settings.settings_tab),
+                        alt_url,
+                        headers=fallback_headers,
+                        timeout=15,
                     )
                     if alt_response.status_code == 200:
                         response = alt_response
@@ -791,7 +798,6 @@ class PostDetectionThread(QThread):
 
             offset += page_size
             attempt += 1
-            time.sleep(0.5)
 
         if self.is_running:
             detected_posts = []
@@ -1098,13 +1104,15 @@ class FilePreparationThread(QThread):
             f"{domain_config['api_base']}/{service}/user/{creator_id}/post/{post_id}"
         )
         max_retries = self.settings.post_data_max_retries
-        retry_delay_seconds = 5
+        retry_delay_seconds = int(compute_backoff(0))
         for attempt in range(1, max_retries + 1):
             try:
                 headers = get_headers().copy()
                 headers["Referer"] = domain_config["referer"]
-                response = get_session(self.settings.settings_tab).get(
-                    api_url, headers=headers
+                response = paced_get(
+                    get_session(self.settings.settings_tab),
+                    api_url,
+                    headers=headers,
                 )
                 if response.status_code != 200:
                     if response.status_code == 429 and attempt < max_retries:
@@ -1425,8 +1433,11 @@ class CreatorDownloadThread(QThread):
         try:
             headers = get_headers().copy()
             headers["Referer"] = self.domain_config["referer"]
-            profile_response = get_session(self.settings.settings_tab).get(
-                profile_url, headers=headers, timeout=10
+            profile_response = paced_get(
+                get_session(self.settings.settings_tab),
+                profile_url,
+                headers=headers,
+                timeout=10,
             )
             if profile_response.status_code == 200:
                 profile_data = profile_response.json()
@@ -1460,8 +1471,11 @@ class CreatorDownloadThread(QThread):
                 try:
                     headers = get_headers().copy()
                     headers["Referer"] = self.domain_config["referer"]
-                    response = get_session(self.settings.settings_tab).get(
-                        post_url, headers=headers, timeout=10
+                    response = paced_get(
+                        get_session(self.settings.settings_tab),
+                        post_url,
+                        headers=headers,
+                        timeout=10,
                     )
                     if response.status_code == 200:
                         post_data = response.json()
@@ -1656,8 +1670,11 @@ class CreatorDownloadThread(QThread):
             api_url = f"{self.domain_config['api_base']}/{self.service}/user/{self.creator_id}/post/{post_id}"
             headers = get_headers().copy()
             headers["Referer"] = self.domain_config["referer"]
-            response = get_session(self.settings.settings_tab).get(
-                api_url, headers=headers, timeout=10
+            response = paced_get(
+                get_session(self.settings.settings_tab),
+                api_url,
+                headers=headers,
+                timeout=10,
             )
             if response.status_code == 200:
                 post_data = response.json()
@@ -1815,8 +1832,10 @@ class CreatorDownloadThread(QThread):
                         with self._ssl_lock:
                             if not self.is_running:
                                 raise Exception("Download cancelled before connection")
-                            response = session.get(
+                            response = paced_get(
+                                session,
                                 file_url,
+                                is_running=lambda: self.is_running,
                                 headers=headers,
                                 stream=True,
                                 timeout=(30, 30),
@@ -1951,7 +1970,7 @@ class CreatorDownloadThread(QThread):
                         ),
                         "WARNING",
                     )
-                    await asyncio.sleep(1)
+                    await asyncio.sleep(compute_backoff(attempt - 1))
             except Exception as e:
                 self._safe_emit(
                     self.log,
@@ -2200,7 +2219,7 @@ class ValidationThread(QThread):
             return
 
         max_retries = self.settings.api_request_max_retries
-        retry_delay = 2
+        retry_delay = compute_backoff(0)
 
         for attempt in range(1, max_retries + 1):
             try:
@@ -2215,8 +2234,11 @@ class ValidationThread(QThread):
                     "Referer": self.domain_config["referer"],
                 }
 
-                direct_response = get_session(self.settings.settings_tab).get(
-                    self.url, headers=fallback_headers, timeout=10
+                direct_response = paced_get(
+                    get_session(self.settings.settings_tab),
+                    self.url,
+                    headers=fallback_headers,
+                    timeout=10,
                 )
                 domain_check = self.domain_config["domain"].split(".")[
                     0
@@ -2246,7 +2268,7 @@ class ValidationThread(QThread):
                         "WARNING",
                     )
                     time.sleep(retry_delay)
-                    retry_delay *= 2  # Exponential backoff
+                    retry_delay = compute_backoff(attempt)
 
             except requests.RequestException as e:
                 if attempt < max_retries:
@@ -2259,7 +2281,7 @@ class ValidationThread(QThread):
                         "WARNING",
                     )
                     time.sleep(retry_delay)
-                    retry_delay *= 2
+                    retry_delay = compute_backoff(attempt)
                 else:
                     self.log.emit(
                         translate(
@@ -3011,6 +3033,7 @@ class CreatorDownloaderTab(QWidget):
                 skipped_count += 1
                 continue
             self.creator_queue.append((url, False))
+            self._remember_creator(url)
             added_count += 1
 
         if added_count > 0:
@@ -3021,6 +3044,57 @@ class CreatorDownloaderTab(QWidget):
         if invalid_count:
             summary += f" ({invalid_count} invalid)"
         self.append_log_to_console(translate("log_info", summary), "INFO")
+
+    def _remember_creator(self, url):
+        """Persist *url* to the bookmarks store when the Bookmarks tab exists."""
+        bookmarks = getattr(self._parent, "bookmarks_tab", None)
+        store = getattr(bookmarks, "store", None)
+        if store is None:
+            return
+        try:
+            store.add(url)
+        except Exception:
+            pass
+
+    def enqueue_creator_urls(self, urls):
+        """Add creator URLs to the queue and return ``(added, skipped)``."""
+        if isinstance(urls, str):
+            urls = [urls]
+
+        added = 0
+        skipped = 0
+        for url in urls:
+            candidate = (url or "").strip()
+            if not candidate:
+                continue
+            normalized_url = candidate.rstrip("/")
+            if any(
+                item[0].rstrip("/") == normalized_url for item in self.creator_queue
+            ):
+                skipped += 1
+                continue
+
+            domain_config = get_domain_config(normalized_url)
+            parts = normalized_url.split("/")
+            if (
+                len(parts) < 5
+                or domain_config["domain"] not in normalized_url
+                or parts[-2] != "user"
+            ):
+                skipped += 1
+                continue
+
+            self.creator_queue.append((candidate, False))
+            self._remember_creator(candidate)
+            added += 1
+
+        if added:
+            self.update_creator_queue_list()
+        self.append_log_to_console(
+            translate("log_info", translate("bulk_add_summary", added, skipped)),
+            "INFO",
+        )
+        return added, skipped
 
     def add_creator_to_queue(self):
         url = self.creator_url_input.text().strip()
@@ -3069,6 +3143,7 @@ class CreatorDownloaderTab(QWidget):
         self.background_task_label.setText(translate("idle"))
         if valid:
             self.creator_queue.append((url, False))
+            self._remember_creator(url)
             self.update_creator_queue_list()
             self.creator_url_input.clear()
             self.append_log_to_console(
@@ -3078,6 +3153,28 @@ class CreatorDownloaderTab(QWidget):
             self.append_log_to_console(
                 translate("log_error", translate("invalid_creator_url", url)), "ERROR"
             )
+
+    def create_bookmark_handler(self, url):
+        def handler():
+            bookmarks = getattr(self._parent, "bookmarks_tab", None)
+            store = getattr(bookmarks, "store", None)
+            if store is None:
+                return
+            if store.contains(url):
+                store.remove(url)
+                self.append_log_to_console(
+                    translate("log_info", translate("bookmark_removed", url)), "INFO"
+                )
+            elif store.add(url):
+                self.append_log_to_console(
+                    translate("log_info", translate("bookmark_added", url)), "INFO"
+                )
+            refresh = getattr(bookmarks, "refresh_bookmarks", None)
+            if callable(refresh):
+                refresh()
+            self.update_creator_queue_list()
+
+        return handler
 
     def create_view_handler(self, url, checked):
         def handler():
@@ -3126,6 +3223,13 @@ class CreatorDownloaderTab(QWidget):
         return handler
 
     def update_creator_queue_list(self):
+        bookmarks = getattr(self._parent, "bookmarks_tab", None)
+        store = getattr(bookmarks, "store", None)
+        try:
+            saved_urls = set(store.all()) if store is not None else set()
+        except Exception:
+            saved_urls = set()
+
         self.creator_queue_list.clear()
         for url, checked in self.creator_queue:
             item = QListWidgetItem()
@@ -3148,6 +3252,21 @@ class CreatorDownloaderTab(QWidget):
             )
             layout.addWidget(label, stretch=1)
 
+            is_bookmarked = url.rstrip("/") in saved_urls
+            bookmark_button = QPushButton(
+                qta.icon(
+                    "fa5s.bookmark" if is_bookmarked else "fa5.bookmark",
+                    color="#FFD93D" if is_bookmarked else "white",
+                ),
+                "",
+            )
+            bookmark_button.setToolTip(translate("bookmark_creator"))
+            bookmark_button.setStyleSheet(
+                "background: #4A5B7A; padding: 2px; border-radius: 5px; min-width: 30px; max-width: 30px; min-height: 30px; max-height: 30px;"
+            )
+            bookmark_button.clicked.connect(self.create_bookmark_handler(url))
+            layout.addWidget(bookmark_button)
+
             remove_button = QPushButton(qta.icon("fa5s.times", color="white"), "")
             remove_button.setStyleSheet(
                 "background: #4A5B7A; padding: 2px; border-radius: 5px; min-width: 30px; max-width: 30px; min-height: 30px; max-height: 30px;"
@@ -3161,6 +3280,7 @@ class CreatorDownloaderTab(QWidget):
             self.creator_queue_list.setItemWidget(item, widget)
             setattr(widget, "view_button", view_button)
             setattr(widget, "label", label)
+            setattr(widget, "bookmark_button", bookmark_button)
             setattr(widget, "remove_button", remove_button)
 
     def check_creator_from_queue(self, url):
@@ -4892,6 +5012,7 @@ class CreatorDownloaderTab(QWidget):
                         and parts[-2] == "user"
                     ):
                         self.creator_queue.append((original_url, False))
+                        self._remember_creator(original_url)
                         added_count += 1
                         self.append_log_to_console(
                             translate(

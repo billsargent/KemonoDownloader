@@ -7,7 +7,6 @@ from urllib.parse import urlparse
 
 IDENTIFIABLE_USER_AGENT = "KemonoDownloader/5.13.0 (+mailto:izeno.contact@gmail.com)"
 PAWCHIVE_MAX_ACTIVE_DOWNLOADS = 5
-PAWCHIVE_REQUEST_INTERVAL = 1.0
 
 
 def is_pawchive_url(url: str) -> bool:
@@ -25,25 +24,24 @@ def get_request_headers(headers: dict, url: str) -> dict:
 
 
 class _PawchiveDownloadLimiter:
+    """Caps how many Pawchive file downloads run at once.
+
+    Request spacing lives in :mod:`kemonodownloader.request_pacing` so that all
+    hosts share one schedule.
+    """
+
     def __init__(self) -> None:
         self._lock = threading.Lock()
         self._active = 0
-        self._next_request_at = 0.0
 
     def acquire(self, is_running: Callable[[], bool]) -> bool:
-        """Reserve a download slot and wait for the request-rate interval."""
+        """Reserve a download slot, polling until one frees up."""
         while is_running():
             with self._lock:
-                now = time.monotonic()
-                if (
-                    self._active < PAWCHIVE_MAX_ACTIVE_DOWNLOADS
-                    and now >= self._next_request_at
-                ):
+                if self._active < PAWCHIVE_MAX_ACTIVE_DOWNLOADS:
                     self._active += 1
-                    self._next_request_at = now + PAWCHIVE_REQUEST_INTERVAL
                     return True
-                wait_for = max(0.05, self._next_request_at - now)
-            time.sleep(min(wait_for, 0.1))
+            time.sleep(0.1)
         return False
 
     def release(self) -> None:

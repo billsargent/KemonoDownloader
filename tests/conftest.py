@@ -46,6 +46,41 @@ def pytest_configure(config):
 # the early QApplication created above was garbage-collected.
 
 
+@pytest.fixture(autouse=True)
+def block_external_open_calls(monkeypatch):
+    """Prevent the test suite from launching real browser windows.
+
+    ``KemonoDownloader.show_update_notification`` opens the default browser once
+    its dialog is accepted, and Qt rich-text labels can open external links.
+    Tests run headless, so both paths are neutralised and the attempted URLs are
+    recorded on the fixture value.
+    """
+    import webbrowser
+
+    opened = []
+
+    def _record(url, *args, **kwargs):
+        opened.append(str(url))
+        return True
+
+    monkeypatch.setattr(webbrowser, "open", _record)
+    monkeypatch.setattr(webbrowser, "open_new", _record)
+    monkeypatch.setattr(webbrowser, "open_new_tab", _record)
+    try:
+        from PyQt6.QtGui import QDesktopServices
+
+        monkeypatch.setattr(QDesktopServices, "openUrl", staticmethod(_record))
+    except Exception:
+        pass
+    # Windows only: opening a directory launches File Explorer.
+    import os as _os
+
+    if hasattr(_os, "startfile"):
+        monkeypatch.setattr(_os, "startfile", _record, raising=False)
+
+    return opened
+
+
 @pytest.fixture()
 def isolated_settings(tmp_path):
     """Provide a QSettings instance backed by an isolated temp INI file.

@@ -24,6 +24,7 @@ from PyQt6.QtWidgets import (
 )
 
 from kemonodownloader.creator_downloader import CreatorDownloaderTab
+from kemonodownloader.kd_bookmarks import BookmarksTab
 from kemonodownloader.kd_extension import ExtensionTab
 from kemonodownloader.kd_help import HelpTab
 from kemonodownloader.kd_language import translate
@@ -283,6 +284,8 @@ class KemonoDownloader(QMainWindow):
             self.help_tab.update_ui_text()
         if hasattr(self, "extension_tab"):
             self.extension_tab.update_ui_text()
+        if hasattr(self, "bookmarks_tab"):
+            self.bookmarks_tab.update_ui_text()
 
     def _apply_font_recursive(self, widget, font_family: str):
         """Recursively update the font family on all child widgets."""
@@ -383,6 +386,13 @@ class KemonoDownloader(QMainWindow):
             translate("creator_downloader_tab"),
         )
 
+        self.bookmarks_tab = BookmarksTab(self)
+        self.tabs.addTab(
+            self.bookmarks_tab,
+            qta.icon("fa5s.bookmark", color="white"),
+            translate("bookmarks_tab"),
+        )
+
         self.thumbnail_tab = ThumbnailDownloaderTab(self)
         self.tabs.addTab(
             self.thumbnail_tab,
@@ -433,12 +443,19 @@ class KemonoDownloader(QMainWindow):
             self.intro_screen.update_ui_text()
 
         if self.main_widget:
-            self.tabs.setTabText(0, translate("post_downloader_tab"))
-            self.tabs.setTabText(1, translate("creator_downloader_tab"))
-            self.tabs.setTabText(2, translate("thumbnail_downloader_tab"))
-            self.tabs.setTabText(3, translate("settings_tab"))
-            self.tabs.setTabText(4, translate("help_tab"))
-            self.tabs.setTabText(5, translate("extension_tab"))
+            tab_titles = [
+                (self.post_tab, "post_downloader_tab"),
+                (self.creator_tab, "creator_downloader_tab"),
+                (self.bookmarks_tab, "bookmarks_tab"),
+                (self.thumbnail_tab, "thumbnail_downloader_tab"),
+                (self.settings_tab, "settings_tab"),
+                (self.help_tab, "help_tab"),
+                (self.extension_tab, "extension_tab"),
+            ]
+            for tab, title_key in tab_titles:
+                index = self.tabs.indexOf(tab)
+                if index >= 0:
+                    self.tabs.setTabText(index, translate(title_key))
 
             if (
                 self.status_label.text() == "Idle"
@@ -453,6 +470,7 @@ class KemonoDownloader(QMainWindow):
 
             self.post_tab.refresh_ui()
             self.creator_tab.refresh_ui()
+            self.bookmarks_tab.refresh_ui()
             self.thumbnail_tab.refresh_ui()
             self.settings_tab.update_ui_text()
             self.help_tab.update_ui_text()

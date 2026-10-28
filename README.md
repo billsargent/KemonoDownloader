@@ -111,7 +111,7 @@ We strongly encourage users to:
 
 - **Legal Risks**: Downloading content from Kemono.cr, Coomer.st, and Pawchive.pw may violate copyright laws or the terms of service of the original platforms. Users assume all legal risks associated with using this tool.
 - **Dependency on Kemono.cr, Coomer.st, and Pawchive.pw**: KemonoDownloader relies on Kemono.cr, Coomer.st, and Pawchive.pw, which have a history of inconsistent updates and downtime. If these sites become unavailable, this tool will lose its functionality.
-- **Rate Limits and Errors**: Kemono.cr, Coomer.st, and Pawchive.pw may impose rate limits or other restrictions that affect download performance. Pawchive downloads use request pacing and a five-download cap to reduce overload and help prevent transient HTTP 403 responses; this cannot guarantee uninterrupted access or bypass server-side access controls.
+- **Rate Limits and Errors**: Kemono.cr, Coomer.st, and Pawchive.pw may impose rate limits or other restrictions that affect download performance. Pawchive downloads use request pacing and a five-download cap to reduce overload and help prevent transient HTTP 403 responses; the request spacing is configurable under Settings → Request Pacing, and this cannot guarantee uninterrupted access or bypass server-side access controls.
 
 ### $\color{#90a4ae}{\sf{\text{Site Availability Status}}}$ <a name="site-availability-status"></a>
 
@@ -147,6 +147,7 @@ We are committed to fostering a welcoming and respectful community around Kemono
   - [Getting Started](#getting-started)
   - [Post Downloader Tab](#post-downloader-tab)
   - [Creator Downloader Tab](#creator-downloader-tab)
+  - [Bookmarks Tab](#bookmarks-tab)
   - [Thumbnail Downloader Tab](#thumbnail-downloader-tab)
   - [Settings Tab](#settings-tab)
   - [Help Tab](#help-tab)
@@ -172,6 +173,7 @@ KemonoDownloader offers a comprehensive set of features designed to efficiently 
 |---------|-------------|
 | **Post Downloader** | Download files from individual posts using direct URLs. Supports previewing, filtering by file type, and batch selection. |
 | **Creator Downloader** | Bulk download entire creator profiles or selected posts. Configurable options for main files, attachments, and content images. |
+| **Creator Bookmarks** | Save creator URLs in a dedicated tab and push them into the Creator Downloader queue in one click. Creators added to the queue are bookmarked automatically, and each queue row has a bookmark toggle. |
 | **Thumbnail Downloader** | Dedicated fallback tab that downloads post/creator preview thumbnails and post descriptions (`desc_{post_id}.txt`) even when main media download servers are down or unavailable. |
 | **File Type Support** | Handles images (JPG, PNG, GIF, WebP), videos (MP4, AVI, MOV), archives (ZIP, 7Z, RAR), documents (PDF, TXT), audio (MP3, WAV), and more. |
 | **URL Import** | Import multiple creator URLs from .txt files for batch processing. |
@@ -182,7 +184,8 @@ KemonoDownloader offers a comprehensive set of features designed to efficiently 
 
 | Feature | Description |
 |---------|-------------|
-| **Concurrent Downloads** | Adjustable parallel downloads (1-10 threads) for optimal performance. |
+| **Concurrent Downloads** | Adjustable parallel downloads (1-20 threads) for optimal performance. |
+| **Request Pacing** | Configurable minimum delay between requests, per-host delay overrides (`host=seconds`), and an exponential retry backoff with a configurable base and cap. Applies to the Post, Creator and Thumbnail tabs. |
 | **Retry Mechanisms** | Configurable retries for posts fetching, data retrieval, file downloads, and API requests. |
 | **File Deduplication** | Prevents redundant downloads using SQLite-backed URL hashing (auto-migrates from legacy JSON). |
 | **Connection Pooling** | Efficient HTTP connection management with gzip compression support. |
@@ -210,11 +213,15 @@ KemonoDownloader offers a comprehensive set of features designed to efficiently 
 #### $\color{#90a4ae}{\sf{\text{Download Settings}}}$
 | Setting | Description | Default | Range |
 |---------|-------------|---------|-------|
-| Simultaneous Downloads | Number of parallel threads | 5 | 1-10 |
+| Simultaneous Downloads | Number of parallel threads | 5 | 1-20 |
 | Creator Posts Max Attempts | Max attempts to fetch posts | 200 | 1-1000 |
-| Post Data Max Retries | Retries for post data | 7 | 1-50 |
-| File Download Max Retries | Retries for files | 50 | 1-100 |
-| API Request Max Retries | Retries for API calls | 3 | 1-10 |
+| Post Data Max Retries | Retries for post data | 7 | 1-100 |
+| File Download Max Retries | Retries for files | 50 | 1-200 |
+| API Request Max Retries | Retries for API calls | 3 | 1-50 |
+| Delay Between Requests | Minimum spacing applied to every request (seconds, 0 disables) | 0 | 0-30 |
+| Per-Host Delays | Extra spacing for specific hosts, one `host=seconds` per line | `pawchive.pw=1.0` | — |
+| Retry Backoff Base | First retry delay; doubles on each further attempt (seconds) | 1 | 0-30 |
+| Retry Backoff Cap | Upper bound for retry delays (seconds) | 30 | 1-300 |
 
 #### $\color{#90a4ae}{\sf{\text{Folder Settings}}}$
 - **Base Directory**: Custom root path for downloads
@@ -370,6 +377,14 @@ Upon launching, you’ll see an introductory screen with a "Launch" button. Clic
   3. Click the eye icon to fetch posts, configure options (Main File, Attachments, Content Images), and select posts.
   4. Click "Download" to begin, and track progress via the interface.
 
+### $\color{#90a4ae}{\sf{\text{Bookmarks Tab}}}$ <a name="bookmarks-tab"></a>
+- **Purpose**: Keep a persistent list of creator URLs so frequently followed creators do not have to be re-pasted every session.
+- **How to Use**:
+  1. Enter a creator URL in the bookmarks input and click "Add Bookmark", or use "Import .txt" to load a list (one URL per line).
+  2. Select one or more entries and click "Add Selected to Queue", or click "Add All to Queue" to send everything to the Creator Downloader queue.
+  3. The application switches to the Creator Downloader tab and logs how many creators were added or skipped.
+  4. Every creator added to the Creator Downloader queue is bookmarked automatically; the bookmark button on each queue row adds or removes a bookmark manually.
+
 ### $\color{#90a4ae}{\sf{\text{Thumbnail Downloader Tab}}}$ <a name="thumbnail-downloader-tab"></a>
 - **Purpose**: Download thumbnails and post text descriptions when primary media servers are down or offline.
 - **How to Use**:
@@ -383,8 +398,9 @@ Upon launching, you’ll see an introductory screen with a "Launch" button. Clic
 - **Purpose**: Customize the application’s behavior.
 - **How to Use**:
   1. Set the folder name and save directory for downloads.
-  2. Adjust simultaneous downloads (1-10) using the slider or spinbox.
-  3. Click "Apply Changes" to save.
+  2. Adjust simultaneous downloads (1-20) using the slider or spinbox.
+  3. Tune request pacing if needed: a global delay between requests, per-host delays (`host=seconds`, one per line), and the retry backoff base/cap. The default of `0 s` keeps the previous behaviour for Kemono/Coomer, while `pawchive.pw=1.0` preserves the Pawchive policy.
+  4. Click "Apply Changes" to save.
 
 ### $\color{#90a4ae}{\sf{\text{Help Tab}}}$ <a name="help-tab"></a>
 - **Purpose**: Access the embedded user manual.

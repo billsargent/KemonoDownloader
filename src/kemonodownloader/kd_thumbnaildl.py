@@ -33,8 +33,13 @@ from PyQt6.QtWidgets import (
 
 from kemonodownloader.creator_downloader import get_session
 from kemonodownloader.domain_config import get_domain_config
+from kemonodownloader.download_policy import (
+    acquire_pawchive_download,
+    release_pawchive_download,
+)
 from kemonodownloader.kd_language import translate
 from kemonodownloader.post_downloader import MediaPreviewModal
+from kemonodownloader.request_pacing import PacedSession, compute_backoff
 
 SUPPORTED_THUMBNAIL_EXTS = (".jpg", ".jpeg", ".png", ".gif", ".webp")
 
@@ -144,7 +149,7 @@ class ThumbnailDetectionThread(QThread):
         all_detected: List[Tuple[str, str, List[str]]] = (
             []
         )  # (title, post_id, thumb_urls)
-        session = get_session(self.settings_tab)
+        session = PacedSession(get_session(self.settings_tab))
         from kemonodownloader.post_downloader import get_headers
 
         for url in self.urls:
@@ -480,7 +485,7 @@ class ThumbnailDownloadThread(QThread):
                     "referer", f"https://{domain_cfg['domain']}/"
                 ),
             }
-            session = get_session(self.settings_tab)
+            session = PacedSession(get_session(self.settings_tab))
             res = None
             for attempt in range(3):
                 try:
@@ -495,7 +500,7 @@ class ThumbnailDownloadThread(QThread):
                             break
                 except Exception:
                     pass
-                time.sleep(1)
+                time.sleep(compute_backoff(attempt))
 
             if res is None or res.status_code != 200:
                 code = res.status_code if res is not None else "Timeout"
@@ -655,7 +660,7 @@ class ThumbnailDownloadThread(QThread):
                         post_id, service, user_id, domain, os.path.dirname(filepath)
                     )
 
-            session = get_session(self.settings_tab)
+            session = PacedSession(get_session(self.settings_tab))
             headers = {
                 "User-Agent": (
                     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
@@ -665,8 +670,14 @@ class ThumbnailDownloadThread(QThread):
                 "Referer": get_domain_config(thumb_url)["referer"],
             }
 
+            if not acquire_pawchive_download(
+                thumb_url, lambda: not self.is_cancelled
+            ):
+                return False
             try:
-                res = session.get(thumb_url, headers=headers, timeout=20, stream=True)
+                res = session.get(
+                    thumb_url, headers=headers, timeout=20, stream=True
+                )
                 res.raise_for_status()
 
                 total_bytes = int(res.headers.get("content-length", 0))
@@ -707,6 +718,8 @@ class ThumbnailDownloadThread(QThread):
             except Exception as e:
                 self.log_message.emit(f"Failed download ({thumb_url}): {str(e)}")
                 return False
+            finally:
+                release_pawchive_download(thumb_url)
 
         with concurrent.futures.ThreadPoolExecutor(
             max_workers=self.simultaneous_downloads

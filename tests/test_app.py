@@ -51,6 +51,7 @@ def mock_app_dependencies(monkeypatch):
     monkeypatch.setattr("kemonodownloader.app.SettingsTab", MockTab)
     monkeypatch.setattr("kemonodownloader.app.PostDownloaderTab", MockTab)
     monkeypatch.setattr("kemonodownloader.app.CreatorDownloaderTab", MockTab)
+    monkeypatch.setattr("kemonodownloader.app.BookmarksTab", MockTab)
     monkeypatch.setattr("kemonodownloader.app.ThumbnailDownloaderTab", MockTab)
     monkeypatch.setattr("kemonodownloader.app.HelpTab", MockTab)
     monkeypatch.setattr("kemonodownloader.app.ExtensionTab", MockTab)
@@ -111,7 +112,7 @@ class TestKemonoDownloader:
             window._finish_intro_transition()
 
             assert hasattr(window, "tabs")
-            assert window.tabs.count() == 6
+            assert window.tabs.count() == 7
 
             # Test disable/enable
             window.disable_other_tabs()
@@ -144,7 +145,9 @@ class TestKemonoDownloader:
         finally:
             window.deleteLater()
 
-    def test_dialogs(self, qapp, mock_app_dependencies, monkeypatch):
+    def test_dialogs(
+        self, qapp, mock_app_dependencies, monkeypatch, block_external_open_calls
+    ):
         window = KemonoDownloader()
         try:
             window.transition_to_main()
@@ -156,6 +159,9 @@ class TestKemonoDownloader:
 
             # Test version notifications
             window.show_update_notification("1.0.0", "http://test")
+            # Accepting the dialog must hand the release URL to the browser
+            # (blocked by the autouse fixture so no real window opens).
+            assert "http://test" in block_external_open_calls
             window.show_error_notification("Error message")
 
             # Test status logging

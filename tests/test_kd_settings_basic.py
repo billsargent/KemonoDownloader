@@ -126,10 +126,11 @@ def test_browse_and_open_directory(tmp_path, monkeypatch):
     tab.browse_directory()
     assert tab.directory_input.text() == str(tmp_path)
 
-    # open_app_directory should call subprocess; monkeypatch to avoid side-effects
+    # open_app_directory should call the platform opener; patch it out
     tab.temp_settings["base_directory"] = str(tmp_path)
     tab.temp_settings["base_folder_name"] = "MyApp"
     monkeypatch.setattr(subprocess, "call", lambda *a, **k: 0)
+    monkeypatch.setattr(ks.os, "startfile", lambda *a, **k: None, raising=False)
     tab.open_app_directory()
 
 
