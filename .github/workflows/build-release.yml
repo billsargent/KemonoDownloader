@@ -23,20 +23,20 @@ jobs:
         include:
           - os: windows-latest
             platform: windows
-            format: msi
             python_cmd: python
+            package_cmd: "python -m briefcase package windows --no-input -p msi"
             asset_glob: "dist/*.msi"
             artifact: kemonodownloader-windows
           - os: ubuntu-latest
             platform: linux
-            format: appimage
             python_cmd: python3
+            package_cmd: "python3 -m briefcase package linux appimage --no-input"
             asset_glob: "dist/*.AppImage"
             artifact: kemonodownloader-linux
           - os: macos-latest
             platform: macos
-            format: dmg
             python_cmd: python
+            package_cmd: "python -m briefcase package macos --no-input --adhoc-sign -p dmg"
             asset_glob: "dist/*.dmg"
             artifact: kemonodownloader-macos
     steps:
@@ -66,7 +66,7 @@ jobs:
           python -m pip install --upgrade pip
           python -m pip install briefcase
 
-      - name: Create, build and package
+      - name: Create and build
         shell: bash
         env:
           APPIMAGE_EXTRACT_AND_RUN: "1"
@@ -75,12 +75,14 @@ jobs:
           PY="${{ matrix.python_cmd }}"
           "$PY" -m briefcase create "${{ matrix.platform }}" --no-input
           "$PY" -m briefcase build "${{ matrix.platform }}" --no-input
-          if [ "${{ matrix.platform }}" = "macos" ]; then
-            # Ad-hoc signing keeps the unsigned build runnable on Apple silicon.
-            "$PY" -m briefcase package "${{ matrix.platform }}" --no-input --adhoc-sign -p "${{ matrix.format }}"
-          else
-            "$PY" -m briefcase package "${{ matrix.platform }}" --no-input -p "${{ matrix.format }}"
-          fi
+
+      - name: Package
+        shell: bash
+        env:
+          APPIMAGE_EXTRACT_AND_RUN: "1"
+        run: |
+          set -euo pipefail
+          ${{ matrix.package_cmd }}
 
       - name: Upload workflow artifact
         uses: actions/upload-artifact@v4
