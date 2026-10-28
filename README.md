@@ -353,6 +353,18 @@ Support ongoing development and get access here: **[Ko-fi Binaries Page](https:/
    - **General**: `briefcase dev` *(Recommended)*
    - **Note**: An internet connection is required to fetch content from Kemono.cr, Coomer.st, and Pawchive.pw.
 
+### $\color{#90a4ae}{\sf{\text{Cross-Platform Builds}}}$
+Briefcase builds only for the operating system it runs on; it cannot cross-compile. To produce installers for several platforms, use the bundled workflow [`.github/workflows/build-release.yml`](.github/workflows/build-release.yml):
+
+1. Either push a `v*` tag, or open **Actions → Build release artifacts → Run workflow** and enter an existing release tag to attach the results to.
+2. The workflow builds on native runners and uploads:
+   - `*.msi` from `windows-latest` (WiX MSI)
+   - `*.deb` from `ubuntu-latest` (Briefcase's Linux system template, built with the system Python)
+   - `*.dmg` from `macos-latest` (arm64, ad-hoc signed so it runs on Apple silicon)
+3. Every artifact is also downloadable from the workflow run for 14 days.
+
+Linux packages must be built on Linux and macOS packages on macOS hardware; AppImage packaging currently fails with released Briefcase because the upstream AppImage template expects a `host_arch` variable that Briefcase 0.4.7 does not provide, so the workflow ships a `.deb` instead.
+
 ## $\color{#546e7a}{\sf{\text{Usage}}}$ <a name="usage"></a>
 Upon launching, you’ll see an introductory screen with a "Launch" button. Click it to enter the main interface, featuring four tabs: **Post Downloader**, **Creator Downloader**, **Settings**, and **Help**. The in-app Help tab contains a comprehensive user manual.
 
