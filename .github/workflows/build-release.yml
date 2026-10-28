@@ -24,19 +24,22 @@ jobs:
           - os: windows-latest
             platform: windows
             python_cmd: python
-            package_cmd: "python -m briefcase package windows --no-input -p msi"
+            format_suffix: ""
+            package_args: "-p msi"
             asset_glob: "dist/*.msi"
             artifact: kemonodownloader-windows
           - os: ubuntu-latest
             platform: linux
             python_cmd: python3
-            package_cmd: "python3 -m briefcase package linux appimage --no-input"
+            format_suffix: "appimage"
+            package_args: ""
             asset_glob: "dist/*.AppImage"
             artifact: kemonodownloader-linux
           - os: macos-latest
             platform: macos
             python_cmd: python
-            package_cmd: "python -m briefcase package macos --no-input --adhoc-sign -p dmg"
+            format_suffix: ""
+            package_args: "--adhoc-sign -p dmg"
             asset_glob: "dist/*.dmg"
             artifact: kemonodownloader-macos
     steps:
@@ -73,8 +76,8 @@ jobs:
         run: |
           set -euo pipefail
           PY="${{ matrix.python_cmd }}"
-          "$PY" -m briefcase create "${{ matrix.platform }}" --no-input
-          "$PY" -m briefcase build "${{ matrix.platform }}" --no-input
+          "$PY" -m briefcase create ${{ matrix.platform }} ${{ matrix.format_suffix }} --no-input
+          "$PY" -m briefcase build ${{ matrix.platform }} ${{ matrix.format_suffix }} --no-input
 
       - name: Package
         shell: bash
@@ -82,7 +85,8 @@ jobs:
           APPIMAGE_EXTRACT_AND_RUN: "1"
         run: |
           set -euo pipefail
-          ${{ matrix.package_cmd }}
+          PY="${{ matrix.python_cmd }}"
+          "$PY" -m briefcase package ${{ matrix.platform }} ${{ matrix.format_suffix }} --no-input ${{ matrix.package_args }}
 
       - name: Upload workflow artifact
         uses: actions/upload-artifact@v4
