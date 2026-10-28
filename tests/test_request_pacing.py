@@ -1,7 +1,5 @@
 """Tests for configurable request pacing and retry backoff."""
 
-import threading
-import time
 from types import SimpleNamespace
 
 import pytest
@@ -207,9 +205,7 @@ def test_paced_get_raises_when_cancelled(clock):
 
     session = _FakeSession()
     with pytest.raises(rp.RequestCancelled):
-        rp.paced_get(
-            session, "https://kemono.cr/second", is_running=lambda: False
-        )
+        rp.paced_get(session, "https://kemono.cr/second", is_running=lambda: False)
     assert session.calls == []
     assert isinstance(rp.RequestCancelled("x"), requests.RequestException)
 

@@ -670,14 +670,10 @@ class ThumbnailDownloadThread(QThread):
                 "Referer": get_domain_config(thumb_url)["referer"],
             }
 
-            if not acquire_pawchive_download(
-                thumb_url, lambda: not self.is_cancelled
-            ):
+            if not acquire_pawchive_download(thumb_url, lambda: not self.is_cancelled):
                 return False
             try:
-                res = session.get(
-                    thumb_url, headers=headers, timeout=20, stream=True
-                )
+                res = session.get(thumb_url, headers=headers, timeout=20, stream=True)
                 res.raise_for_status()
 
                 total_bytes = int(res.headers.get("content-length", 0))

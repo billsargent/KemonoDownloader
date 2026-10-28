@@ -50,8 +50,8 @@ from kemonodownloader.download_policy import (
     release_pawchive_download,
 )
 from kemonodownloader.hash_db import HashDB
-from kemonodownloader.request_pacing import compute_backoff, paced_get
 from kemonodownloader.kd_language import translate
+from kemonodownloader.request_pacing import compute_backoff, paced_get
 
 
 class ThreadSettings:

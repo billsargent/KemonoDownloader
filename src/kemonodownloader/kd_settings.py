@@ -380,7 +380,9 @@ class SettingsTab(QWidget):
         self.retry_backoff_max_spinbox.setValue(
             float(self.temp_settings["retry_backoff_max_seconds"])
         )
-        self.retry_backoff_max_spinbox.setStyleSheet("padding: 5px; border-radius: 5px;")
+        self.retry_backoff_max_spinbox.setStyleSheet(
+            "padding: 5px; border-radius: 5px;"
+        )
         self.retry_backoff_max_spinbox.valueChanged.connect(
             lambda value: self.update_temp_setting("retry_backoff_max_seconds", value)
         )

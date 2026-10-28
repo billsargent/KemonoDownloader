@@ -211,9 +211,7 @@ class BookmarksTab(QWidget):
         layout.addLayout(actions_layout)
 
         self.bookmark_list = QListWidget()
-        self.bookmark_list.setSelectionMode(
-            QListWidget.SelectionMode.ExtendedSelection
-        )
+        self.bookmark_list.setSelectionMode(QListWidget.SelectionMode.ExtendedSelection)
         self.bookmark_list.setStyleSheet(
             "QListWidget { background: #2A3B5A; border-radius: 5px; color: white; }"
         )
@@ -269,9 +267,7 @@ class BookmarksTab(QWidget):
         super().showEvent(a0)
 
     def update_count_label(self):
-        self.count_label.setText(
-            translate("bookmarks_count", len(self.store.all()))
-        )
+        self.count_label.setText(translate("bookmarks_count", len(self.store.all())))
 
     # ------------------------------------------------------------------
     # Bookmark management

@@ -7,8 +7,8 @@ from PyQt6.QtWidgets import QFileDialog, QMessageBox
 
 from kemonodownloader.creator_downloader import CreatorDownloaderTab
 from kemonodownloader.kd_bookmarks import (
-    BookmarkStore,
     BookmarksTab,
+    BookmarkStore,
     describe_creator_url,
     normalize_creator_url,
 )
@@ -231,9 +231,7 @@ def test_add_creators_from_file_bookmarks_urls(
         "getOpenFileName",
         staticmethod(lambda *a, **k: (str(file_path), "")),
     )
-    monkeypatch.setattr(
-        QMessageBox, "information", staticmethod(lambda *a, **k: None)
-    )
+    monkeypatch.setattr(QMessageBox, "information", staticmethod(lambda *a, **k: None))
 
     tab.add_creators_from_file()
 
@@ -369,9 +367,7 @@ def test_bookmarks_tab_remove_and_clear(qapp, isolated_settings, monkeypatch):
     assert tab.bookmark_list.count() == 0
 
 
-def test_bookmarks_tab_import_from_file(
-    qapp, isolated_settings, tmp_path, monkeypatch
-):
+def test_bookmarks_tab_import_from_file(qapp, isolated_settings, tmp_path, monkeypatch):
     tab, store, _, _, _ = _make_tab(qapp, isolated_settings)
     file_path = tmp_path / "bookmarks.txt"
     file_path.write_text(
