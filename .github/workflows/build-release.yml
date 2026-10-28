@@ -31,10 +31,10 @@ jobs:
           - os: ubuntu-latest
             platform: linux
             python_cmd: python3
-            format_suffix: "appimage"
-            package_args: ""
-            asset_glob: "dist/*.AppImage"
-            artifact: kemonodownloader-linux
+            format_suffix: "system"
+            package_args: "-p deb"
+            asset_glob: "dist/*.deb"
+            artifact: kemonodownloader-linux-deb
           - os: macos-latest
             platform: macos
             python_cmd: python
@@ -61,13 +61,13 @@ jobs:
             libegl1 libgl1-mesa-dri libglx-mesa0 libx11-6 libxkbcommon0 \
             libxcb-xinerama0 libpulse0 libpulse-mainloop-glib0 libasound2t64 \
             mesa-utils
-          python3 -m pip install --user --break-system-packages --upgrade briefcase
+          python3 -m pip install --user --break-system-packages --upgrade briefcase==0.4.7
 
       - name: Install Briefcase
         if: matrix.platform != 'linux'
         run: |
           python -m pip install --upgrade pip
-          python -m pip install briefcase
+          python -m pip install briefcase==0.4.7
 
       - name: Create and build
         shell: bash
