@@ -131,19 +131,30 @@ def cleanup_qt_threads_after_test():
         return
 
     app = QCoreApplication.instance()
+
+    # Only touch the event loop when there is actually a worker to clean up.
+    # Processing deferred events on every teardown has aborted the interpreter
+    # natively on macOS arm64 (exit 134) while no thread needed attention.
+    running_threads = []
+    for obj in list(gc.get_objects()):
+        try:
+            if isinstance(obj, QThread) and obj.isRunning():
+                running_threads.append(obj)
+        except Exception:
+            # Deleted sip wrappers raise; they cannot be cleaned up anyway.
+            pass
+
+    if not running_threads:
+        return
+
     if app is not None:
         try:
             app.processEvents()
         except Exception:
             pass
 
-    for obj in list(gc.get_objects()):
+    for obj in running_threads:
         try:
-            if not isinstance(obj, QThread):
-                continue
-            if not obj.isRunning():
-                continue
-
             # Cooperatively request shutdown first.
             for request in ("stop", "cancel"):
                 try:
